@@ -6,7 +6,7 @@
 # Use your own User ID (Saved Messages) for chat-specific tests
 TARGET_USER_ID="976142936"
 # Command to run the MCP server
-SERVER_CMD="uv run simple-telegram-mcp-server"
+SERVER_CMD="uv run simple-telegram-mcp"
 # Unique text for test messages to avoid conflicts
 TEST_MSG_BASE="MCP Auto Test $(date +%s)"
 # Emoji for reaction test

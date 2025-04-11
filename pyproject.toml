@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.scripts]
-simple-telegram-mcp-server = "simple_telegram_mcp.__main__:main"
+simple-telegram-mcp = "simple_telegram_mcp.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
