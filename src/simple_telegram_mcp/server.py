@@ -59,26 +59,42 @@ async def serve() -> None:
 
     # --- Telegram Client Initialization ---
     logger.info("Initializing Telegram client wrapper...")
+    logging.info("Attempting to create TelegramClientWrapper...")
     wrapper = TelegramClientWrapper()
+    logging.info("TelegramClientWrapper created.")
     connected_successfully = False
     try:
         logger.info("Connecting Telegram client using existing session...")
-        connected = await wrapper.connect(perform_login_if_needed=False)
-        if connected:
+        # Attempt to connect using existing session data
+        logging.info("Attempting to connect client...")
+        await wrapper.connect(perform_login_if_needed=False)
+        logging.info("Client connection attempt finished.")
+
+        # Check authorization status *after* connection attempt
+        is_auth = await wrapper.client.is_user_authorized()
+
+        if is_auth:
             telegram_wrapper_instance = wrapper
             connected_successfully = True
-            # Set the instance for the helper functions *after* successful connection
-            set_telegram_instance(telegram_wrapper_instance)
-            logger.info("Telegram client connected and authorized via session.")
+            logging.info("Attempting to set client instance in helpers...")
+            set_telegram_instance(telegram_wrapper_instance)  # Set instance in helpers
+            logging.info("Client instance set in helpers.")
+            logger.info("Telegram client connected and authorized using session.")
         else:
-            logger.warning("Failed to connect/authorize Telegram client.")
-            # Still set the instance, some tools might work without auth (like login_status)
-            telegram_wrapper_instance = wrapper
-            set_telegram_instance(telegram_wrapper_instance)
-    except Exception as e:
-        logger.error(
-            f"FATAL: Exception during Telegram client connection: {e}", exc_info=True
-        )
+            # Client connected but not authorized (session invalid/expired/missing)
+            telegram_wrapper_instance = wrapper  # Keep instance for status checks etc.
+            logging.info("Attempting to set client instance in helpers...")
+            set_telegram_instance(telegram_wrapper_instance)  # Set instance in helpers
+            logging.info("Client instance set in helpers.")
+            connected_successfully = False
+            logger.warning(
+                "Telegram client connected but is NOT authorized. "
+                "Session may be invalid or missing. "
+                "Run with --login to perform interactive login."
+            )
+            # Server continues, but tools requiring authorization will fail.
+    except Exception:
+        logging.exception("Error during Telegram client initialization/connection:")
         # Ensure instance is None and set in helpers if connection fails
         telegram_wrapper_instance = None
         set_telegram_instance(None)

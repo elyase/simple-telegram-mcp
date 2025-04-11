@@ -8,7 +8,7 @@ DEFAULT_API_ID = 611335
 DEFAULT_API_HASH = "d524b414d21f4d37f08684c1df41ac9c"
 
 # Standard data directory in user's home
-DATA_DIR_NAME = ".telegram_mcp_data"
+DATA_DIR_NAME = ".simple_telegram_mcp"
 HOME_DATA_DIR = Path.home() / DATA_DIR_NAME
 SESSION_FILENAME = "telegram.session"
 QR_CODE_FILENAME = "login_qr.png"  # Will be removed when switching to phone login
