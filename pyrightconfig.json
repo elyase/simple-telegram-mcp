@@ -1,0 +1,13 @@
+{
+  "include": ["src", "tests"],
+  "exclude": [
+    "dist",
+    "docs",
+    "vendors",
+    "build",
+    "**/__pycache__"
+  ],
+  "typeCheckingMode": "basic",
+  "reportAttributeAccessIssue": "warning",
+  "reportGeneralTypeIssues": "warning"
+}
