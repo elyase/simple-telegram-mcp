@@ -3,23 +3,35 @@
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Mapping, MutableMapping, Sequence, cast
 
 from dotenv import dotenv_values
+import tomli_w
 
 from simple_telegram_mcp import __version__
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
+
+try:  # Python < 3.11 fallback
+    if sys.version_info >= (3, 11):  # pragma: no branch
+        import tomllib  # type: ignore
+    else:  # pragma: no cover
+        import tomli as tomllib  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - tomli missing only in misconfigured envs
+    tomllib = None  # type: ignore
 
 # Server metadata
 SERVER_NAME = "simple-telegram-mcp"
 PACKAGE_DEP = f"simple-telegram-mcp=={__version__}"
 
 # Clients supported by this installer
+_CODEX_CLIENT_INFO: Dict[str, Any] = {"name": "OpenAI Codex CLI", "method": "codex-toml"}
+
 MCP_CLIENT_CONFIG: Dict[str, Dict[str, Any]] = {
     "cursor": {"name": "Cursor", "method": "fastmcp"},
     "claude-desktop": {"name": "Claude Desktop", "method": "fastmcp"},
@@ -27,7 +39,8 @@ MCP_CLIENT_CONFIG: Dict[str, Dict[str, Any]] = {
     "gemini-cli": {"name": "Gemini CLI", "method": "fastmcp"},
     "mcp-json": {"name": "MCP JSON (stdout)", "method": "fastmcp"},
     "vscode": {"name": "VS Code", "method": "vscode"},
-    "codex-cli": {"name": "OpenAI Codex CLI", "method": "codex-toml"},
+    "codex": _CODEX_CLIENT_INFO,
+    "codex-cli": _CODEX_CLIENT_INFO,
 }
 
 def _env_from_dotenv() -> Dict[str, str]:
@@ -106,46 +119,101 @@ def _generate_fastmcp_server_block() -> Dict[str, Any]:
     return server.model_dump(exclude_none=True)
 
 
-def _codex_cli_install() -> None:
-    cfg_dir = Path.home() / ".codex"
-    cfg_dir.mkdir(parents=True, exist_ok=True)
-    cfg_file = cfg_dir / "config.toml"
+def _codex_config_path() -> Path:
+    override = os.environ.get("SIMPLE_TELEGRAM_MCP_CODEX_CONFIG")
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".codex" / "config.toml"
 
-    existing = cfg_file.read_text(encoding="utf-8") if cfg_file.exists() else ""
-    header = f"[mcp_servers.{SERVER_NAME}]\n"
 
-    # args rendered as TOML array
-    args = [
-        "run",
-        "--with",
-        "fastmcp",
-        "--with",
-        PACKAGE_DEP,
-        "fastmcp",
-        "run",
-        _server_spec(),
-    ]
-    args_toml = "[\n  \"" + "\",\n  \"".join(args) + "\"\n]"
+def _load_toml_document(text: str) -> Dict[str, Any] | None:
+    if not text.strip():
+        return {}
+    if tomllib is None:  # pragma: no cover - misconfigured environment
+        return None
+    try:
+        data = tomllib.loads(text)
+    except Exception:  # pragma: no cover - invalid TOML
+        return None
+    if not isinstance(data, dict):  # pragma: no cover - tomllib should return dict
+        return None
+    return cast(Dict[str, Any], data)
 
-    lines = [header, 'command = "uv"\n', f"args = {args_toml}\n"]
-    env_map = _runtime_env()
-    if env_map:
-        env_items = ", ".join([f'"{k}" = "{v}"' for k, v in env_map.items()])
-        lines.append(f"env = {{ {env_items} }}\n")
-    block = "".join(lines)
 
-    if header in existing:
-        # replace current block
-        before, _, tail = existing.partition(header)
-        import re
+def _ensure_table(root: MutableMapping[str, Any], key: str) -> MutableMapping[str, Any]:
+    value = root.get(key)
+    if isinstance(value, MutableMapping):
+        return value
+    table: Dict[str, Any] = {}
+    root[key] = table
+    return table
 
-        m = re.search(r"\n\[mcp_servers\.[^\]]+\]", "\n" + tail)
-        new_content = before + block + (tail[m.start() + 1 :] if m else "")
+
+def _format_toml_value(value: Any) -> str:
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
+        return f'"{escaped}"'
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        inner = ", ".join(_format_toml_value(item) for item in value)
+        return f"[{inner}]"
+    if isinstance(value, Mapping):
+        inner = ", ".join(
+            f'"{key}" = {_format_toml_value(val)}' for key, val in value.items()
+        )
+        return "{ " + inner + " }"
+    raise TypeError(f"Unsupported value type: {type(value)!r}")
+
+
+def _render_codex_block(server_block: Mapping[str, Any]) -> str:
+    lines = [f"[mcp_servers.{SERVER_NAME}]"]
+    for key, value in server_block.items():
+        lines.append(f"{key} = {_format_toml_value(value)}")
+    return "\n".join(lines) + "\n"
+
+
+def _merge_codex_server_block(existing: str, server_block: Mapping[str, Any]) -> str:
+    block = _render_codex_block(server_block)
+    if not existing.strip():
+        return block if block.endswith("\n") else block + "\n"
+
+    pattern = re.compile(
+        rf"(?ms)^\[mcp_servers\.{re.escape(SERVER_NAME)}\]\n.*?(?=^\[|\Z)"
+    )
+    match = pattern.search(existing)
+    if match:
+        new_content = existing[: match.start()] + block + existing[match.end():]
     else:
-        new_content = existing.rstrip() + ("\n\n" if existing else "") + block
+        trimmed = existing.rstrip()
+        separator = "\n\n" if trimmed else ""
+        new_content = trimmed + separator + block
 
-    cfg_file.write_text(new_content, encoding="utf-8")
-    print(f"Updated {cfg_file} with MCP server '{SERVER_NAME}'.")
+    if not new_content.endswith("\n"):
+        new_content += "\n"
+    return new_content
+
+
+def _codex_cli_install() -> None:
+    config_path = _codex_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    existing_text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+    server_block = _generate_fastmcp_server_block()
+
+    document = _load_toml_document(existing_text)
+    if document is not None:
+        mcp_servers = _ensure_table(document, "mcp_servers")
+        mcp_servers[SERVER_NAME] = server_block
+        config_path.write_text(tomli_w.dumps(document), encoding="utf-8")
+        print(f"Updated Codex MCP config at {config_path}")
+        return
+
+    merged = _merge_codex_server_block(existing_text, server_block)
+    config_path.write_text(merged, encoding="utf-8")
+    print(f"Updated Codex MCP config at {config_path}")
 
 
 def _vscode_config_path() -> Path:

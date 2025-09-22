@@ -8,6 +8,11 @@
   <h1>Simple Telegram MCP</h1>
 </div>
 
+## ⭐ Why Simple Telegram MCP?
+
+- **Zero-credential setup.** Skip creating API IDs; just start chatting and the MCP authenticates via phone without leaving the conversation.
+- **One-line client installers** `uvx simple-telegram-mcp --install …` drops ready-to-go configs for Cursor, Claude Desktop, Claude Code, Gemini CLI, VS Code, or plain MCP JSON — no hand-editing hidden files.
+
 ## ✨ Example use cases
 
 - **Automate tasks**: “Look up the weather forecast and send it to my family group”
@@ -17,7 +22,7 @@
 
 ## 🚀 Quick Start
 
-### Automatic client configuration
+### Client configuration
 
 | Client            | Command                                           |
 |-------------------|---------------------------------------------------|
@@ -27,18 +32,15 @@
 | Gemini CLI        | `uvx simple-telegram-mcp --install gemini-cli`    |
 | VS Code (global)  | `uvx simple-telegram-mcp --install vscode`        |
 | MCP JSON (stdout) | `uvx simple-telegram-mcp --install mcp-json`      |
-| OpenAI Codex CLI  | `uvx simple-telegram-mcp --install codex-cli`     |
+| OpenAI Codex CLI  | `uvx simple-telegram-mcp --install codex` *(alias: `codex-cli`)* |
 
 ### Authorize Telegram
+
+The login flow is zero drama. Just start chatting and follow instructions. Alternatively you can login manually on the CLI, it will ask you for your phone number, Telegram will DM you a code, you paste it back here, and you’re in.
 
 ```bash
 uvx simple-telegram-mcp --login
 ```
-
->
-> ✨ Heads-up: the login flow is zero drama. You’ll pop in your phone number, Telegram will DM you a code, you paste it back here, and you’re in.
-
-> 💡 When using Simple Telegram MCP through an assistant, run `telegram_auth_start` followed by `telegram_auth_confirm` right inside the conversation as soon as an `AUTH_REQUIRED` message appears. The assistant will guide you through entering your phone, code, and (if needed) two-factor password.
 
 ## 🛠️ Tools
 
